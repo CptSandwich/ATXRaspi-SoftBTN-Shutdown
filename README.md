@@ -1,9 +1,7 @@
 # ATXRaspi-SoftBTN-Shutdown
-Replacement shutdown script to trigger shutdown via ATXRaspi's SoftBTN
+Script triggers ATXRaspi SoftBTN.
 
-Rename existing shutdown script in /sbin to shutdownoriginal
-Add new shutdown script to /sbin, make executable
-Update "Button" in shutdown script to reflect correct GPIO pin number
-
-
-Calling "shutdown" or "shutdown now" will trigger ATXRaspi SoftBTN and prompt shutdown. Any other arguments are passed to the original shutdown script. Scheduled shutdowns will not trigger SoftBTN. 
+Save softbtn.sh in /sbin directory and make executable. 
+Save softbtn.service in /etc/systemd/system. 
+Refresh systemd configuration files systemctl daemon-reload. 
+Enable script systemctl enable softbtn
