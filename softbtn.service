@@ -1,0 +1,14 @@
+[Unit]
+Description=Trigger ATXRaspi SoftBTN at shutdown only
+DefaultDependencies=no
+Conflicts=reboot.target
+Before=poweroff.target halt.target shutdown.target
+Requires=poweroff.target
+
+[Service]
+Type=oneshot
+ExecStart=/sbin/softbtn.sh start
+RemainAfterExit=yes
+
+[Install]
+WantedBy=shutdown.target
