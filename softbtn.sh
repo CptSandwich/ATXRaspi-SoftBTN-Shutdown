@@ -5,7 +5,7 @@
 #
 # Requires: gpiod  (sudo apt install gpiod)
 
-BUTTON=22
+BUTTON=10
 
 # Auto-detect the 40-pin header GPIO chip.
 #   - Pi 1/2/3/4/Zero: labelled "pinctrl-bcm2835" (or similar) -> usually gpiochip0

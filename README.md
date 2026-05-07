@@ -31,7 +31,7 @@ the stable `/dev/gpiochip*` chardev instead.
 
 ## Install
 
-The default pin is **BCM GPIO 22**. Change it during install if yours is
+The default pin is **BCM GPIO 10**. Change it during install if yours is
 wired elsewhere.
 
 ### Automated (recommended)
@@ -50,7 +50,7 @@ change the pin.
 
 ```bash
 sudo apt install -y gpiod
-# Edit BUTTON= in softbtn.sh if not using BCM 22
+# Edit BUTTON= in softbtn.sh if not using BCM 10
 sudo install -m 755 softbtn.sh /sbin/softbtn.sh
 sudo install -m 644 softbtn.service /etc/systemd/system/softbtn.service
 sudo systemctl daemon-reload

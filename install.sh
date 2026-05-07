@@ -9,7 +9,7 @@ SCRIPT_SRC="$(dirname "$(readlink -f "$0")")/softbtn.sh"
 SERVICE_SRC="$(dirname "$(readlink -f "$0")")/softbtn.service"
 SCRIPT_DST="/sbin/softbtn.sh"
 SERVICE_DST="/etc/systemd/system/softbtn.service"
-DEFAULT_PIN=22
+DEFAULT_PIN=10
 
 # --- Require root -----------------------------------------------------------
 if [ "$EUID" -ne 0 ]; then
@@ -53,7 +53,7 @@ echo
 
 # --- Prompt for BCM pin -----------------------------------------------------
 while true; do
-  read -rp "BCM GPIO pin for ATXRaspi SoftBTN [$DEFAULT_PIN]: " PIN
+  read -rp "BCM GPIO pin for ATXRaspi SoftBTN [default $DEFAULT_PIN]: " PIN
   PIN=${PIN:-$DEFAULT_PIN}
   if [[ "$PIN" =~ ^[0-9]+$ ]] && [ "$PIN" -ge 0 ] && [ "$PIN" -le 53 ]; then
     break
