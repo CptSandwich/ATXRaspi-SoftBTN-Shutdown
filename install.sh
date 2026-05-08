@@ -136,6 +136,14 @@ systemctl daemon-reload
 systemctl enable softbtn.service
 systemctl enable shutdowncheck.service
 
+# Start shutdowncheck.service immediately so BOOTOK is asserted now and the
+# SHUTDOWN watcher is live without requiring a reboot. softbtn.service is a
+# oneshot triggered by shutdown.target -- starting it now would fire the
+# pulse, so we leave it enabled but not started; it will run automatically
+# at the next poweroff.
+echo "Starting (or restarting) shutdowncheck.service..."
+systemctl restart shutdowncheck.service
+
 # --- Summary ----------------------------------------------------------------
 echo
 echo "Done."
@@ -144,7 +152,5 @@ echo "  Shutdowncheck:  $SHUTDOWNCHECK_SH_DST  (BOOTOK=BCM $BOOTOK_PIN, SHUTDOWN
 echo "  Services:       softbtn.service, shutdowncheck.service"
 echo "  Chip:           $DETECTED_CHIP (auto-detected each boot)"
 echo
-echo "Reboot to start shutdowncheck.service, or start it now with:"
-echo "  sudo systemctl start shutdowncheck.service"
-echo
+echo "shutdowncheck.service is now running; softbtn.service will fire on next poweroff."
 echo "Re-run this installer any time to change pins."
