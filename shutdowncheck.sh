@@ -45,13 +45,19 @@ cleanup() {
 }
 trap cleanup INT TERM EXIT
 
-# Hold BOOTOK HIGH in the background. --mode=signal keeps gpioset alive
-# holding the line until it receives a signal; the trap above sends SIGTERM
-# on script exit, releasing the line.
-gpioset --mode=signal "$CHIP" "$BOOTOK=1" &
-BOOTOK_PID=$!
-
-echo "ATXRaspi shutdowncheck: $CHIP, BOOTOK=$BOOTOK HIGH, watching SHUTDOWN=$SHUTDOWN"
+# Assert BOOTOK HIGH. Prefer the gpio-leds overlay: the kernel's leds-gpio
+# driver holds the pin without a userspace process and retains it through
+# shutdown via retain-state-shutdown. Fall back to libgpiod if the overlay
+# isn't loaded yet (e.g. before the first reboot after install, or on Pi 5).
+BOOTOK_LED=/sys/class/leds/atxraspi-bootok/brightness
+if [ -f "$BOOTOK_LED" ]; then
+  echo 1 > "$BOOTOK_LED"
+  echo "ATXRaspi shutdowncheck: BOOTOK via gpio-leds, watching SHUTDOWN=$SHUTDOWN"
+else
+  gpioset --mode=signal "$CHIP" "$BOOTOK=1" &
+  BOOTOK_PID=$!
+  echo "ATXRaspi shutdowncheck: BOOTOK=$BOOTOK via libgpiod (fallback), watching SHUTDOWN=$SHUTDOWN on $CHIP"
+fi
 
 now_ms() { date +%s%3N; }
 

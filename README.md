@@ -12,9 +12,9 @@ cd ATXRaspi-SoftBTN-Shutdown
 sudo ./install.sh
 ```
 
-The installer detects and offers to disable any LowPowerLab stock script in `/etc/rc.local`, installs `gpiod` if missing, prompts for the three BCM pins (defaults: SoftBTN=10, BOOTOK=8, SHUTDOWN=7), and starts `shutdowncheck.service` immediately. 
+The installer detects and offers to disable any LowPowerLab stock script in `/etc/rc.local`, installs `gpiod` and `device-tree-compiler` if missing, prompts for the three BCM pins (defaults: SoftBTN=10, BOOTOK=8, SHUTDOWN=7), and starts `shutdowncheck.service` immediately.
 
-No reboot needed. Re-run any time to change pins.
+A reboot is required after install (or after changing the BOOTOK pin) for the BOOTOK gpio-leds overlay to take effect. Until then, `shutdowncheck.service` holds BOOTOK via libgpiod. Re-run any time to change pins.
 
 ## Recovery
 
@@ -30,15 +30,13 @@ Delete to re-enable.
 | SHUTDOWN | ATXRaspi → Pi | Long HIGH pulse → poweroff, short → reboot.    | BCM 7   |
 | SoftBTN  | Pi → ATXRaspi | Pulsed HIGH for ~1 s on poweroff (not reboot). | BCM 10  |
 
-## Known limitation: BOOTOK drop timing
+## Known limitation: journal corruption on shutdown
 
-On at least Pi 4 / Bookworm, BOOTOK drops a moment before the kernel finishes its halt sequence (final disk syncs, filesystem unmounts), which means the ATXRaspi sees BOOTOK go LOW while there is still some disk activity in flight. After several `sudo poweroff` cycles, journald reports its previous journal as `corrupted or uncleanly shut down` on next boot.
+After a `sudo poweroff`, journald reports its previous journal as `corrupted or uncleanly shut down` on next boot.
 
-This is **cosmetic in the cases we've tested** — `fsck` reports the EXT4 root clean, no orphaned inodes, no journal recovery, and applications like Klipper / Moonraker see their working trees as clean. journald simply didn't get to write its "clean shutdown" marker before the kernel halted; it gracefully renames the affected file and starts a new one.
+This is **cosmetic in the cases we've tested** -- `fsck` reports the EXT4 root clean, no orphaned inodes, no journal recovery, and applications like Klipper / Moonraker see their working trees as clean. journald simply did not get to write its clean-shutdown marker before the kernel halted; it gracefully renames the affected file and starts a new one.
 
-We tried three software approaches to extend BOOTOK HIGH (libgpiod with an orphaned `gpioset`, sysfs, firmware-level `gpio=8=op,dh` in `config.txt`) and they all behave identically: the kernel itself releases the pin during `device_shutdown()` callbacks (likely the bcm2711 / pinctrl-rp1 driver's `.shutdown`), which runs as part of the reboot syscall. Userspace processes can't outlive that step, so no software-side trick produces a meaningfully later BOOTOK drop.
-
-Moving the timing further requires hardware-level intervention or a change to the ATXRaspi's microcontroller firmware to extend its internal BOOTOK→cut-power delay. For typical use this isn't necessary.
+We verified this is not caused by the ATXRaspi cutting power too early: the corruption occurs even with `softbtn.service` disabled and power cut manually after the Pi has fully halted. journald does not finish its final sync before the kernel halts regardless of when or how power is cut. This appears to be inherent to Pi 4 / Bookworm.
 
 ## Uninstall
 

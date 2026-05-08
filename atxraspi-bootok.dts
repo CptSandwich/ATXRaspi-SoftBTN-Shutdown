@@ -1,9 +1,9 @@
 /*
  * ATXRaspi BOOTOK overlay.
  *
- * Declares BCM 8 as a gpio-leds entry with default-state=off and
+ * Declares a GPIO pin as a gpio-leds entry with default-state=off and
  * retain-state-shutdown. The kernel's leds-gpio driver therefore:
- *   - drives BCM 8 LOW at boot (Pi not "OK" yet),
+ *   - drives the pin LOW at boot (Pi not "OK" yet),
  *   - exposes /sys/class/leds/atxraspi-bootok/brightness for userspace,
  *   - skips the normal "set LED LOW on shutdown" step in its .shutdown
  *     callback, leaving BOOTOK HIGH right through to kernel halt.
@@ -13,11 +13,11 @@
  * by the kernel's leds-gpio driver until the SoC powers off at halt.
  *
  * Aimed at Pi 1/2/3/4/Zero (pinctrl-bcm2835/2711, exposed as &gpio).
- * Pi 5 (pinctrl-rp1) needs a separate variant referencing &rp1_gpio.
+ * Pi 5 (pinctrl-rp1) is untested; &rp1_gpio may be needed instead of &gpio.
  *
  * Build:   dtc -@ -I dts -O dtb -o atxraspi-bootok.dtbo atxraspi-bootok.dts
  * Install: copy .dtbo to /boot/firmware/overlays/ and add
- *          dtoverlay=atxraspi-bootok to /boot/firmware/config.txt
+ *          dtoverlay=atxraspi-bootok,gpio_pin=N to /boot/firmware/config.txt
  */
 
 /dts-v1/;
@@ -32,13 +32,17 @@
             atxraspi-bootok {
                 compatible = "gpio-leds";
 
-                led-bootok {
+                led_bootok: led-bootok {
                     label = "atxraspi-bootok";
-                    gpios = <&gpio 8 0>;     /* BCM 8, GPIO_ACTIVE_HIGH */
+                    gpios = <&gpio 8 0>;     /* BCM 8 default; override via gpio_pin= */
                     default-state = "off";
                     retain-state-shutdown;
                 };
             };
         };
+    };
+
+    __overrides__ {
+        gpio_pin = <&led_bootok>, "gpios:4";
     };
 };
