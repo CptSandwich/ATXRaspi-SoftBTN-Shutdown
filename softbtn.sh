@@ -5,7 +5,17 @@
 #
 # Requires: gpiod  (sudo apt install gpiod)
 
-BUTTON=10
+SOFTBTN=10
+
+# Recovery escape hatch: if a marker file is present on the boot partition,
+# exit immediately without touching any GPIO. See shutdowncheck.sh for the
+# rationale; both scripts honour the same marker.
+for marker in /boot/firmware/atxraspi-disable /boot/atxraspi-disable; do
+  if [ -e "$marker" ]; then
+    echo "ATXRaspi: disabled by $marker, skipping SoftBTN pulse."
+    exit 0
+  fi
+done
 
 # Auto-detect the 40-pin header GPIO chip.
 #   - Pi 1/2/3/4/Zero: labelled "pinctrl-bcm2835" (or similar) -> usually gpiochip0
@@ -14,5 +24,5 @@ CHIP=$(gpiodetect | awk '/pinctrl-/{print $1; exit}')
 CHIP=${CHIP:-gpiochip0}
 
 # Hold the line HIGH for 1 second, then drive LOW.
-gpioset --mode=time --sec=1 "$CHIP" "$BUTTON=1"
-gpioset --mode=exit "$CHIP" "$BUTTON=0"
+gpioset --mode=time --sec=1 "$CHIP" "$SOFTBTN=1"
+gpioset --mode=exit "$CHIP" "$SOFTBTN=0"

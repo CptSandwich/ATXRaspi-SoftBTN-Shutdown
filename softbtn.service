@@ -7,7 +7,7 @@ Requires=poweroff.target
 
 [Service]
 Type=oneshot
-ExecStart=/sbin/softbtn.sh start
+ExecStart=/sbin/softbtn.sh
 RemainAfterExit=yes
 
 [Install]
