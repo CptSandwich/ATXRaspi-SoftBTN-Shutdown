@@ -14,7 +14,7 @@ Before=poweroff.target halt.target reboot.target
 [Service]
 Type=simple
 ExecStart=/sbin/shutdowncheck.sh
-KillMode=mixed
+KillMode=process
 Restart=on-failure
 RestartSec=2
 
