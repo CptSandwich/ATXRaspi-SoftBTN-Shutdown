@@ -49,9 +49,11 @@ done
 # /etc/shutdowncheck.sh or /etc/shutdownirq.py. Both drive BOOTOK and watch
 # SHUTDOWN, so leaving them in place will fight our shutdowncheck.service.
 LPL_RC_RE='shutdowncheck\.sh|shutdownirq\.py'
-if [ -f /etc/rc.local ] && grep -qE "$LPL_RC_RE" /etc/rc.local; then
+# Skip lines that are already commented out so we don't keep re-flagging
+# previously-disabled entries.
+if [ -f /etc/rc.local ] && grep -vE '^[[:space:]]*#' /etc/rc.local | grep -qE "$LPL_RC_RE"; then
   echo "Detected LowPowerLab's stock shutdown script referenced in /etc/rc.local:"
-  grep -nE "$LPL_RC_RE" /etc/rc.local | sed 's/^/  /'
+  grep -nE "$LPL_RC_RE" /etc/rc.local | grep -vE ':[[:space:]]*#' | sed 's/^/  /'
   echo
   echo "Leaving these active will conflict with shutdowncheck.service (both will"
   echo "drive BOOTOK and watch SHUTDOWN)."

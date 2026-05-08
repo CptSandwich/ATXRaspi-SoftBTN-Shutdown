@@ -76,17 +76,26 @@ case "$BOOTOK_METHOD" in
     ;;
 
   gpiod|*)
-    cleanup() {
-      if [ -n "${BOOTOK_PID:-}" ]; then
-        kill "$BOOTOK_PID" 2>/dev/null || true
-      fi
-    }
-    trap cleanup INT TERM EXIT
     gpioset --mode=signal "$CHIP" "$BOOTOK=1" &
     BOOTOK_PID=$!
     echo "ATXRaspi shutdowncheck: $CHIP, BOOTOK=$BOOTOK (gpiod) HIGH, watching SHUTDOWN=$SHUTDOWN"
     ;;
 esac
+
+# On SIGTERM/SIGINT, kill the gpiomon child (if any) and the BOOTOK gpioset
+# (if running) so bash can exit promptly. Without this trap, bash queues
+# signals until the foreground command returns - and gpiomon blocks until a
+# rising edge that may never come, so a `systemctl restart` would hang
+# until TimeoutStopSec elapses.
+cleanup() {
+  if [ -n "${GPIOMON_PID:-}" ]; then
+    kill "$GPIOMON_PID" 2>/dev/null || true
+  fi
+  if [ -n "${BOOTOK_PID:-}" ]; then
+    kill "$BOOTOK_PID" 2>/dev/null || true
+  fi
+}
+trap cleanup INT TERM EXIT
 
 # --- SHUTDOWN watcher (always libgpiod) -------------------------------------
 now_ms() { date +%s%3N; }
@@ -95,7 +104,13 @@ while true; do
   # Block until SHUTDOWN goes HIGH (efficient, no busy-poll).
   # --bias=pull-down ensures a disconnected/floating SHUTDOWN line reads LOW
   # so a missing/broken ATXRaspi can't trigger a spurious poweroff.
-  gpiomon --rising-edge --num-events=1 --silent --bias=pull-down "$CHIP" "$SHUTDOWN" >/dev/null
+  # Run gpiomon in the background and `wait` for it so the trap above can
+  # interrupt the wait on SIGTERM; running it in the foreground would let
+  # the signal queue until the (potentially never-arriving) rising edge.
+  gpiomon --rising-edge --num-events=1 --silent --bias=pull-down "$CHIP" "$SHUTDOWN" >/dev/null &
+  GPIOMON_PID=$!
+  wait "$GPIOMON_PID" 2>/dev/null || true
+  unset GPIOMON_PID
 
   start=$(now_ms)
   # Measure how long the pulse stays HIGH.
