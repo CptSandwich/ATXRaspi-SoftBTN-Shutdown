@@ -14,6 +14,10 @@ power even when shutdown is initiated from software (`sudo poweroff`,
 desktop "Shut Down", a media-player web UI, Klipper / OctoPrint, etc.) and
 not just from the physical button.
 
+> **Tested on:** Raspberry Pi 4 (Bookworm). The libgpiod / chip-detection
+> approach is model-agnostic and should work on Pi 1, 2, 3, Zero, and Pi 5
+> as well, but those have not been verified by the author. Reports welcome.
+
 ## Install
 
 ```bash
