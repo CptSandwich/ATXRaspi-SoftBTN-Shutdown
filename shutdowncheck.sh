@@ -36,12 +36,14 @@ CHIP=$(gpiodetect | awk '/pinctrl-/{print $1; exit}')
 CHIP=${CHIP:-gpiochip0}
 
 cleanup() {
+  trap '' INT TERM EXIT
   if [ -n "${GPIOMON_PID:-}" ]; then
     kill "$GPIOMON_PID" 2>/dev/null || true
   fi
   if [ -n "${BOOTOK_PID:-}" ]; then
     kill "$BOOTOK_PID" 2>/dev/null || true
   fi
+  exit 0
 }
 trap cleanup INT TERM EXIT
 
