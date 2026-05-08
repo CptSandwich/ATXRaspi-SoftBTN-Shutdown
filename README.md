@@ -12,9 +12,18 @@ cd ATXRaspi-SoftBTN-Shutdown
 sudo ./install.sh
 ```
 
-The installer detects and offers to disable any LowPowerLab stock script in `/etc/rc.local`, installs `gpiod` if missing, prompts for the three BCM pins (defaults: SoftBTN=10, BOOTOK=8, SHUTDOWN=7), and starts `shutdowncheck.service` immediately. 
+The installer detects and offers to disable any LowPowerLab stock script in `/etc/rc.local`, installs `gpiod` if missing, prompts for the three BCM pins (defaults: SoftBTN=10, BOOTOK=8, SHUTDOWN=7), asks how BOOTOK should be asserted (see below), and starts `shutdowncheck.service` immediately.
 
-No reboot needed. Re-run any time to change pins.
+No reboot needed. Re-run any time to change pins or method.
+
+## BOOTOK assertion: gpiod vs sysfs
+
+The installer asks which kernel interface to use for holding BOOTOK HIGH:
+
+- **`gpiod`** (default): a backgrounded `gpioset` process holds the line via the modern libgpiod chardev API. When `shutdowncheck.service` is stopped during shutdown, the process exits and BOOTOK is released early in the shutdown sequence. Modern, supported, and the kernel guarantees cleanup if anything crashes.
+- **`sysfs`**: writes to `/sys/class/gpio/.../value`. The kernel takes ownership of the pin state itself, so no userspace process needs to be alive. BOOTOK stays HIGH past `shutdowncheck.service`'s exit and is only released when the kernel halts. The ATXRaspi sees BOOTOK drop later in shutdown, giving a wider margin between BOOTOK→LOW and the kernel completing its halt sequence. **sysfs is officially deprecated by the kernel maintainers** but is still present in current kernels (Bookworm and Trixie). Choose this if you observe premature power-cut with `gpiod`.
+
+The SHUTDOWN watcher and SoftBTN pulse always use libgpiod regardless of which BOOTOK method you pick.
 
 ## Recovery
 

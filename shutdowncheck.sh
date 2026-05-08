@@ -1,10 +1,16 @@
 #!/bin/bash
 # ATXRaspi BOOTOK + SHUTDOWN handler. Mirrors LowPowerLab's shutdowncheck.sh
-# behaviour using libgpiod (kernel 6.6+ / Pi 5 compatible).
+# behaviour using libgpiod for the SHUTDOWN watcher and (configurably)
+# either libgpiod or sysfs for the BOOTOK assertion.
 #
-# - Drives BOOTOK HIGH for the life of this process (released on exit, which
-#   is what the ATXRaspi watches for as the "Pi has halted" signal).
-# - Watches the SHUTDOWN line driven by the ATXRaspi:
+# - Drives BOOTOK HIGH while the system is up. Two methods:
+#     gpiod  (default): backgrounded gpioset --mode=signal. Released when
+#                       this script exits (i.e. early in shutdown).
+#     sysfs:           sets the line via /sys/class/gpio. Pin state is
+#                       owned by the kernel and persists after this script
+#                       exits, so BOOTOK stays HIGH later into shutdown -
+#                       until the kernel itself releases it during halt.
+# - Watches the SHUTDOWN line driven by the ATXRaspi (always libgpiod):
 #     pulse HIGH > 600 ms          -> poweroff
 #     pulse HIGH 200-600 ms        -> reboot
 #     pulse HIGH < 200 ms          -> ignored (debounce)
@@ -17,6 +23,9 @@ BOOTOK=8
 SHUTDOWN=7
 REBOOTPULSEMINIMUM=200
 REBOOTPULSEMAXIMUM=600
+
+# How to assert BOOTOK HIGH. Set by install.sh; one of: gpiod, sysfs.
+BOOTOK_METHOD=gpiod
 
 # Recovery escape hatch: if a marker file is present on the boot partition,
 # exit immediately without touching any GPIO. Lets you boot a system whose
@@ -35,21 +44,51 @@ done
 CHIP=$(gpiodetect | awk '/pinctrl-/{print $1; exit}')
 CHIP=${CHIP:-gpiochip0}
 
-cleanup() {
-  if [ -n "${BOOTOK_PID:-}" ]; then
-    kill "$BOOTOK_PID" 2>/dev/null || true
-  fi
-}
-trap cleanup INT TERM EXIT
+# --- Assert BOOTOK HIGH -----------------------------------------------------
+case "$BOOTOK_METHOD" in
+  sysfs)
+    # Find the chip's sysfs base by matching pinctrl- label, then offset by BCM
+    # pin number. Required because kernel 6.6+ shifted sysfs pin numbering
+    # (e.g. BCM 4 appears as gpio516 instead of gpio4).
+    SYSFS_BASE=""
+    for d in /sys/class/gpio/gpiochip*; do
+      [ -r "$d/label" ] || continue
+      case "$(cat "$d/label")" in
+        pinctrl-*)
+          SYSFS_BASE=$(cat "$d/base")
+          break
+          ;;
+      esac
+    done
+    if [ -z "$SYSFS_BASE" ]; then
+      echo "ATXRaspi: could not find a pinctrl- chip in /sys/class/gpio; aborting." >&2
+      exit 1
+    fi
+    SYSFS_PIN=$((SYSFS_BASE + BOOTOK))
+    if [ ! -d "/sys/class/gpio/gpio$SYSFS_PIN" ]; then
+      echo "$SYSFS_PIN" > /sys/class/gpio/export 2>/dev/null || true
+    fi
+    echo out > "/sys/class/gpio/gpio$SYSFS_PIN/direction"
+    echo 1   > "/sys/class/gpio/gpio$SYSFS_PIN/value"
+    echo "ATXRaspi shutdowncheck: $CHIP, BOOTOK=$BOOTOK (sysfs gpio$SYSFS_PIN) HIGH, watching SHUTDOWN=$SHUTDOWN"
+    # No holding process; the kernel preserves the value until something
+    # explicitly changes it or the kernel itself halts.
+    ;;
 
-# Hold BOOTOK HIGH in the background. --mode=signal keeps gpioset alive
-# holding the line until it receives a signal; the trap above sends SIGTERM
-# on script exit, releasing the line.
-gpioset --mode=signal "$CHIP" "$BOOTOK=1" &
-BOOTOK_PID=$!
+  gpiod|*)
+    cleanup() {
+      if [ -n "${BOOTOK_PID:-}" ]; then
+        kill "$BOOTOK_PID" 2>/dev/null || true
+      fi
+    }
+    trap cleanup INT TERM EXIT
+    gpioset --mode=signal "$CHIP" "$BOOTOK=1" &
+    BOOTOK_PID=$!
+    echo "ATXRaspi shutdowncheck: $CHIP, BOOTOK=$BOOTOK (gpiod) HIGH, watching SHUTDOWN=$SHUTDOWN"
+    ;;
+esac
 
-echo "ATXRaspi shutdowncheck: $CHIP, BOOTOK=$BOOTOK HIGH, watching SHUTDOWN=$SHUTDOWN"
-
+# --- SHUTDOWN watcher (always libgpiod) -------------------------------------
 now_ms() { date +%s%3N; }
 
 while true; do

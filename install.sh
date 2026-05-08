@@ -112,14 +112,36 @@ prompt_pin "BOOTOK   (Pi -> ATXRaspi BOOTOK, held HIGH while running)" "$DEFAULT
 prompt_pin "SHUTDOWN (ATXRaspi -> Pi, monitored for poweroff/reboot)" "$DEFAULT_SHUTDOWN" SHUTDOWN_PIN
 echo
 
+# --- Prompt for BOOTOK assertion method -------------------------------------
+echo "BOOTOK assertion method:"
+echo "  1) gpiod  - libgpiod with a backgrounded gpioset (default)"
+echo "              Released when shutdowncheck.service stops, i.e. early"
+echo "              in shutdown. Modern, supported, but BOOTOK drops sooner."
+echo "  2) sysfs  - /sys/class/gpio (deprecated kernel interface, still works)"
+echo "              Pin state owned by kernel, persists past userspace exit."
+echo "              BOOTOK stays HIGH until kernel-level shutdown releases it,"
+echo "              giving the ATXRaspi more time before it sees BOOTOK drop."
+echo
+while true; do
+  read -rp "Choose [1=gpiod, 2=sysfs] (default 1): " choice
+  choice=${choice:-1}
+  case "$choice" in
+    1) BOOTOK_METHOD=gpiod; break ;;
+    2) BOOTOK_METHOD=sysfs; break ;;
+    *) echo "  Please enter 1 or 2." ;;
+  esac
+done
+echo
+
 # --- Install scripts --------------------------------------------------------
 echo "Installing $SOFTBTN_SH_DST (SOFTBTN=$SOFTBTN_PIN)..."
 sed "s/^SOFTBTN=.*/SOFTBTN=$SOFTBTN_PIN/" "$SOFTBTN_SH_SRC" > "$SOFTBTN_SH_DST"
 chmod +x "$SOFTBTN_SH_DST"
 
-echo "Installing $SHUTDOWNCHECK_SH_DST (BOOTOK=$BOOTOK_PIN, SHUTDOWN=$SHUTDOWN_PIN)..."
+echo "Installing $SHUTDOWNCHECK_SH_DST (BOOTOK=$BOOTOK_PIN via $BOOTOK_METHOD, SHUTDOWN=$SHUTDOWN_PIN)..."
 sed -e "s/^BOOTOK=.*/BOOTOK=$BOOTOK_PIN/" \
     -e "s/^SHUTDOWN=.*/SHUTDOWN=$SHUTDOWN_PIN/" \
+    -e "s/^BOOTOK_METHOD=.*/BOOTOK_METHOD=$BOOTOK_METHOD/" \
     "$SHUTDOWNCHECK_SH_SRC" > "$SHUTDOWNCHECK_SH_DST"
 chmod +x "$SHUTDOWNCHECK_SH_DST"
 
@@ -148,7 +170,7 @@ systemctl restart shutdowncheck.service
 echo
 echo "Done."
 echo "  SoftBTN pulse:  $SOFTBTN_SH_DST  (BCM $SOFTBTN_PIN)"
-echo "  Shutdowncheck:  $SHUTDOWNCHECK_SH_DST  (BOOTOK=BCM $BOOTOK_PIN, SHUTDOWN=BCM $SHUTDOWN_PIN)"
+echo "  Shutdowncheck:  $SHUTDOWNCHECK_SH_DST  (BOOTOK=BCM $BOOTOK_PIN via $BOOTOK_METHOD, SHUTDOWN=BCM $SHUTDOWN_PIN)"
 echo "  Services:       softbtn.service, shutdowncheck.service"
 echo "  Chip:           $DETECTED_CHIP (auto-detected each boot)"
 echo
