@@ -36,6 +36,9 @@ CHIP=$(gpiodetect | awk '/pinctrl-/{print $1; exit}')
 CHIP=${CHIP:-gpiochip0}
 
 cleanup() {
+  if [ -n "${GPIOMON_PID:-}" ]; then
+    kill "$GPIOMON_PID" 2>/dev/null || true
+  fi
   if [ -n "${BOOTOK_PID:-}" ]; then
     kill "$BOOTOK_PID" 2>/dev/null || true
   fi
@@ -56,7 +59,14 @@ while true; do
   # Block until SHUTDOWN goes HIGH (efficient, no busy-poll).
   # --bias=pull-down ensures a disconnected/floating SHUTDOWN line reads LOW
   # so a missing/broken ATXRaspi can't trigger a spurious poweroff.
-  gpiomon --rising-edge --num-events=1 --silent --bias=pull-down "$CHIP" "$SHUTDOWN" >/dev/null
+  # Run gpiomon in the background and `wait` for it so the trap can interrupt
+  # on SIGTERM; running it in the foreground would let the signal queue until
+  # the (potentially never-arriving) rising edge, which causes systemctl
+  # restart to hang for TimeoutStopSec.
+  gpiomon --rising-edge --num-events=1 --silent --bias=pull-down "$CHIP" "$SHUTDOWN" >/dev/null &
+  GPIOMON_PID=$!
+  wait "$GPIOMON_PID" 2>/dev/null || true
+  unset GPIOMON_PID
 
   start=$(now_ms)
   # Measure how long the pulse stays HIGH.
