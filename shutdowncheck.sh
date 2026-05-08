@@ -2,8 +2,11 @@
 # ATXRaspi BOOTOK + SHUTDOWN handler. Mirrors LowPowerLab's shutdowncheck.sh
 # behaviour using libgpiod (kernel 6.6+ / Pi 5 compatible).
 #
-# - Drives BOOTOK HIGH for the life of this process (released on exit, which
-#   is what the ATXRaspi watches for as the "Pi has halted" signal).
+# - Drives BOOTOK HIGH for the life of the backgrounded gpioset child.
+#   On script exit, the gpioset is intentionally NOT killed: it's left as
+#   an orphan, holding BOOTOK HIGH through the rest of systemd's shutdown
+#   sequence. systemd-shutdown reaps it in its final kill phase, dropping
+#   BOOTOK at the truly last moment before the kernel halts.
 # - Watches the SHUTDOWN line driven by the ATXRaspi:
 #     pulse HIGH > 600 ms          -> poweroff
 #     pulse HIGH 200-600 ms        -> reboot
@@ -19,7 +22,6 @@ REBOOTPULSEMINIMUM=200
 REBOOTPULSEMAXIMUM=600
 
 PIDFILE=/run/atxraspi-bootok.pid
-SHUTDOWN_INITIATED=0
 
 # Recovery escape hatch: if a marker file is present on the boot partition,
 # exit immediately without touching any GPIO. Lets you boot a system whose
@@ -38,27 +40,11 @@ done
 CHIP=$(gpiodetect | awk '/pinctrl-/{print $1; exit}')
 CHIP=${CHIP:-gpiochip0}
 
-# On exit, decide whether to release BOOTOK or leave the gpioset running.
-# During system shutdown we want gpioset to outlive this script so BOOTOK
-# stays HIGH all the way through systemd's shutdown sequence; systemd-shutdown
-# will reap the orphan in its final kill phase, dropping BOOTOK at the
-# truly last moment before halt. During a normal stop/restart we still
-# want a clean release so a new instance can grab the line.
-cleanup() {
-  rm -f "$PIDFILE"
-  local stopping
-  stopping="$(systemctl is-system-running 2>/dev/null || true)"
-  if [ "$SHUTDOWN_INITIATED" = "1" ] || [ "$stopping" = "stopping" ]; then
-    return
-  fi
-  if [ -n "${BOOTOK_PID:-}" ]; then
-    kill "$BOOTOK_PID" 2>/dev/null || true
-  fi
-}
-trap cleanup INT TERM EXIT
-
-# Reap any leftover gpioset from a previous run (e.g. a crash) so the new
-# request below isn't blocked by a stale holder of the BOOTOK line.
+# Reap any leftover gpioset from a previous run (crash, manual stop, or a
+# normal restart) so the new request below isn't blocked by a stale holder
+# of the BOOTOK line. Briefly drops BOOTOK to LOW between the kill and the
+# new request below; the ATXRaspi's input debounce makes this transient
+# invisible in practice.
 if [ -f "$PIDFILE" ]; then
   oldpid=$(cat "$PIDFILE" 2>/dev/null || true)
   if [ -n "$oldpid" ] && kill -0 "$oldpid" 2>/dev/null; then
@@ -69,15 +55,14 @@ if [ -f "$PIDFILE" ]; then
 fi
 
 # Hold BOOTOK HIGH in the background. --mode=signal keeps gpioset alive
-# holding the line until it receives a signal. KillMode=process on the
-# service unit means systemd will not kill this child when the main script
-# is stopped during shutdown; instead the gpioset survives until
-# systemd-shutdown's final kill phase.
+# until it receives a signal. KillMode=process on the service unit means
+# systemd will not signal this child when the main script is stopped;
+# instead the gpioset survives until systemd-shutdown's final kill phase.
 gpioset --mode=signal "$CHIP" "$BOOTOK=1" &
 BOOTOK_PID=$!
 echo "$BOOTOK_PID" > "$PIDFILE"
 
-echo "ATXRaspi shutdowncheck: $CHIP, BOOTOK=$BOOTOK HIGH, watching SHUTDOWN=$SHUTDOWN"
+echo "ATXRaspi shutdowncheck: $CHIP, BOOTOK=$BOOTOK HIGH (PID $BOOTOK_PID), watching SHUTDOWN=$SHUTDOWN"
 
 now_ms() { date +%s%3N; }
 
@@ -93,7 +78,6 @@ while true; do
     elapsed=$(( $(now_ms) - start ))
     if [ "$elapsed" -gt "$REBOOTPULSEMAXIMUM" ]; then
       echo "ATXRaspi: SHUTDOWN held > ${REBOOTPULSEMAXIMUM}ms -> poweroff"
-      SHUTDOWN_INITIATED=1
       systemctl poweroff
       exit 0
     fi
@@ -103,7 +87,6 @@ while true; do
   elapsed=$(( $(now_ms) - start ))
   if [ "$elapsed" -gt "$REBOOTPULSEMINIMUM" ]; then
     echo "ATXRaspi: SHUTDOWN pulse ${elapsed}ms -> reboot"
-    SHUTDOWN_INITIATED=1
     systemctl reboot
     exit 0
   fi

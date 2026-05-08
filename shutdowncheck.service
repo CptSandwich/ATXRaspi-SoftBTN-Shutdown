@@ -14,6 +14,10 @@ Before=poweroff.target halt.target reboot.target
 [Service]
 Type=simple
 ExecStart=/sbin/shutdowncheck.sh
+# KillMode=process so the backgrounded gpioset (which holds BOOTOK HIGH)
+# is NOT killed when systemd stops this service during shutdown. Instead
+# it lives on as an orphan and is reaped by systemd-shutdown's final
+# kill phase, dropping BOOTOK at the truly last moment before halt.
 KillMode=process
 Restart=on-failure
 RestartSec=2
