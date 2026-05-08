@@ -1,0 +1,22 @@
+[Unit]
+Description=ATXRaspi shutdowncheck (BOOTOK + SHUTDOWN monitor)
+# DefaultDependencies=no plus the explicit Conflicts/Before below ties this
+# service's stop to poweroff/halt/reboot.target instead of shutdown.target.
+# Those activate very late in shutdown (after softbtn.service has run, after
+# filesystems are remounted read-only), so the BOOTOK line is held HIGH for
+# nearly the entire shutdown sequence and only drops just before the kernel
+# halts -- matching LowPowerLab's stock script timing.
+DefaultDependencies=no
+After=basic.target
+Conflicts=poweroff.target halt.target reboot.target
+Before=poweroff.target halt.target reboot.target
+
+[Service]
+Type=simple
+ExecStart=/sbin/shutdowncheck.sh
+KillMode=mixed
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
