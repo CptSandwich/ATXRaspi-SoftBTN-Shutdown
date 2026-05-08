@@ -125,6 +125,38 @@ sed -e "s/^BOOTOK=.*/BOOTOK=$BOOTOK_PIN/" \
     "$SHUTDOWNCHECK_SH_SRC" > "$SHUTDOWNCHECK_SH_DST"
 chmod +x "$SHUTDOWNCHECK_SH_DST"
 
+# --- Install BOOTOK gpio-leds overlay ----------------------------------------
+MODEL=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null || echo "unknown")
+if echo "$MODEL" | grep -q "Pi 5"; then
+  echo "Pi 5 detected: gpio-leds BOOTOK overlay is untested on Pi 5."
+  echo "BOOTOK will use libgpiod until Pi 5 support is verified."
+  OVERLAY_INSTALLED=false
+else
+  DTS_SRC="$SRCDIR/atxraspi-bootok.dts"
+  DTBO_DST="/boot/firmware/overlays/atxraspi-bootok.dtbo"
+  CONFIG=/boot/firmware/config.txt
+
+  if ! command -v dtc >/dev/null 2>&1; then
+    echo "Installing device-tree-compiler..."
+    apt-get install -y device-tree-compiler
+  fi
+
+  echo "Compiling BOOTOK overlay..."
+  dtc -@ -I dts -O dtb -o "$DTBO_DST" "$DTS_SRC" 2>/dev/null
+  echo "  Installed $DTBO_DST"
+
+  OVERLAY_LINE="dtoverlay=atxraspi-bootok,gpio_pin=$BOOTOK_PIN"
+  if grep -q '^dtoverlay=atxraspi-bootok' "$CONFIG"; then
+    sed -i "s|^dtoverlay=atxraspi-bootok.*|$OVERLAY_LINE|" "$CONFIG"
+  else
+    echo "$OVERLAY_LINE" >> "$CONFIG"
+  fi
+  echo "  Added $OVERLAY_LINE to $CONFIG"
+  echo "  Reboot required for overlay to take effect."
+  OVERLAY_INSTALLED=true
+fi
+echo
+
 # --- Install services -------------------------------------------------------
 echo "Installing $SOFTBTN_SVC_DST..."
 cp "$SOFTBTN_SVC_SRC" "$SOFTBTN_SVC_DST"
@@ -153,6 +185,13 @@ echo "  SoftBTN pulse:  $SOFTBTN_SH_DST  (BCM $SOFTBTN_PIN)"
 echo "  Shutdowncheck:  $SHUTDOWNCHECK_SH_DST  (BOOTOK=BCM $BOOTOK_PIN, SHUTDOWN=BCM $SHUTDOWN_PIN)"
 echo "  Services:       softbtn.service, shutdowncheck.service"
 echo "  Chip:           $DETECTED_CHIP (auto-detected each boot)"
-echo
-echo "shutdowncheck.service is now running; softbtn.service will fire on next poweroff."
+if [ "${OVERLAY_INSTALLED:-false}" = true ]; then
+  echo "  BOOTOK overlay: $DTBO_DST (reboot to activate)"
+  echo
+  echo "shutdowncheck.service is running with libgpiod BOOTOK until next reboot,"
+  echo "then the gpio-leds overlay takes over."
+else
+  echo
+  echo "shutdowncheck.service is now running; softbtn.service will fire on next poweroff."
+fi
 echo "Re-run this installer any time to change pins."
